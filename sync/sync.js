@@ -5,7 +5,7 @@ const Extrato = require('../extrato.js');
 const API = 'https://api.pluggy.ai';
 const { PLUGGY_CLIENT_ID, PLUGGY_CLIENT_SECRET, PLUGGY_ITEM_ID, FIREBASE_SA, SYNC_DESDE } = process.env;
 for (const [k, v] of Object.entries({ PLUGGY_CLIENT_ID, PLUGGY_CLIENT_SECRET, PLUGGY_ITEM_ID, FIREBASE_SA })) {
-  if (!v) { console.log(`Ainda falta o segredo ${k} no GitHub (Settings → Secrets and variables → Actions). Nada a fazer.`); process.exit(0); }
+  if (!v) { console.log(`::error::Falta o segredo ${k} no GitHub (Settings → Secrets and variables → Actions).`); process.exit(1); }
 }
 
 async function chamar(caminho, apiKey, opcoes = {}) {
@@ -55,6 +55,7 @@ function dia(d) { return new Date(d).toISOString().slice(0, 10); }
 
   const { apiKey } = await chamar('/auth', null, { method: 'POST', body: JSON.stringify({ clientId: PLUGGY_CLIENT_ID, clientSecret: PLUGGY_CLIENT_SECRET }) });
   const contas = (await chamar('/accounts?itemId=' + encodeURIComponent(PLUGGY_ITEM_ID), apiKey)).results || [];
+  console.log('::notice::Contas: ' + (contas.map(c => c.type).join(', ') || 'nenhuma'));
   console.log('Contas encontradas:', contas.map(c => `${c.type} ${c.name || ''}`.trim()).join(', ') || 'nenhuma');
 
   const funcionarios = (await db.collection('funcionarios').get()).docs.map(d => ({ id: d.id, ...d.data() }));
@@ -84,5 +85,6 @@ function dia(d) { return new Date(d).toISOString().slice(0, 10); }
     }
   }
   if (ops) await batch.commit();
+  console.log(`::notice::Pronto: ${novos} novas para conferir (${desde} a ${ate}).`);
   console.log(`Pronto: ${novos} movimentações novas para conferir (período ${desde} a ${ate}).`);
-})().catch(e => { console.error('Falhou:', e.message); process.exit(1); });
+})().catch(e => { console.log('::error::Falhou: ' + String(e.message).replace(/\n/g, ' ').slice(0, 400)); process.exit(1); });
