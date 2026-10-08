@@ -260,7 +260,16 @@ window.FIREBASE_CONFIG = {
     }).sort(function (a, b) { return a.data.localeCompare(b.data); });
   }
 
-  root.Extrato = { ler: ler };
+  // usado pela sincronização automática (Pluggy)
+  function classificar(it, funcionarios) {
+    it.desc = limpar(it.descOriginal) || (it.tipo === 'in' ? 'Entrada' : 'Saída');
+    var s = sugerir(it, funcionarios);
+    it.cat = s.cat; if (s.func) it.func = s.func;
+    it.interno = /pagamento recebido|pagamento de fatura|pagamento da fatura|aplicacao rdb|resgate rdb|dinheiro guardado|dinheiro resgatado|caixinha/.test(semAcento(it.descOriginal));
+    return it;
+  }
+
+  root.Extrato = { ler: ler, classificar: classificar };
   if (typeof module !== 'undefined') module.exports = root.Extrato;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -285,7 +294,7 @@ window.FIREBASE_CONFIG = {
   var db = firebase.firestore();
   db.enablePersistence({ synchronizeTabs: true }).catch(function () {});
 
-  var S = { lanc: [], funcionarios: [] };
+  var S = { lanc: [], funcionarios: [], pend: [] };
   var user = null, erro = '', carregou = { l: false, f: false };
   var mes = ym(new Date()), aba = 'lanc', tipo = 'out', confirmId = null, unsub = [], imp = null, impMsg = '';
   try { aba = localStorage.getItem('caixa-aba') || aba; } catch (e) {}
@@ -320,12 +329,16 @@ window.FIREBASE_CONFIG = {
   auth.onAuthStateChanged(function (u) {
     user = u; erro = '';
     unsub.forEach(function (f) { f(); }); unsub = [];
-    S = { lanc: [], funcionarios: [] }; carregou = { l: false, f: false };
+    S = { lanc: [], funcionarios: [], pend: [] }; carregou = { l: false, f: false }; imp = null;
     if (u) {
       unsub.push(db.collection('lancamentos').onSnapshot(function (q) {
         S.lanc = q.docs.map(function (d) { var x = d.data(); x.id = d.id; return x; });
         carregou.l = true; render();
       }, falha));
+      unsub.push(db.collection('pendentes').onSnapshot(function (q) {
+        S.pend = q.docs.map(function (d) { var x = d.data(); x.chave = d.id; return x; }).filter(function (x) { return !x.descartado; });
+        render();
+      }, function () {}));
       unsub.push(db.collection('funcionarios').orderBy('nome').onSnapshot(function (q) {
         S.funcionarios = q.docs.map(function (d) { var x = d.data(); x.id = d.id; return x; });
         carregou.f = true; render();
@@ -346,6 +359,9 @@ window.FIREBASE_CONFIG = {
 
   function painelImportar() {
     var h = '<div class="panel"><div class="bar"><h2>Importar extrato do Nubank</h2>' + (imp ? '<button class="btn small" data-a="imp-cancelar">Cancelar</button>' : '') + '</div>';
+    if (!imp && S.pend.length) {
+      h += '<div class="note bar"><span><b>' + S.pend.length + '</b> movimentaç' + (S.pend.length > 1 ? 'ões' : 'ão') + ' do Nubank chegaram sozinhas para conferir.</span><button class="btn small primary" data-a="imp-pend">Conferir</button></div>';
+    }
     if (!imp) {
       h += '<p class="sub" style="margin:0">Peça o extrato da conta no app do Nubank em <b>CSV</b> ou <b>OFX</b> e escolha o arquivo aqui. A fatura do cartão em CSV também funciona. Nada é lançado antes de você conferir.</p>' +
         '<label class="file"><input type="file" id="arq" accept=".csv,.ofx,.txt,text/csv"><span class="btn">Escolher arquivo do extrato</span></label>';
@@ -355,7 +371,7 @@ window.FIREBASE_CONFIG = {
     var sel = imp.itens.filter(function (x) { return x.sel; }), e = 0, s2 = 0;
     sel.forEach(function (x) { if (x.tipo === 'in') e += x.valor; else s2 += x.valor; });
     var dups = imp.itens.filter(function (x) { return x.dup; }).length;
-    h += '<p class="sub" style="margin:0">' + esc(imp.nome) + ' · ' + imp.itens.length + ' movimentações' + (dups ? ' · ' + dups + ' já estavam no caixa' : '') + '. Confira as categorias e desmarque o que não é da empresa.</p>';
+    h += '<p class="sub" style="margin:0">' + esc(imp.nome) + ' · ' + imp.itens.length + ' movimentações' + (dups ? ' · ' + dups + ' já estavam no caixa' : '') + '. Confira as categorias e desmarque o que não é da empresa' + (imp.pend ? ' (o que ficar desmarcado é descartado)' : '') + '.</p>';
     h += '<ul class="list imp">' + imp.itens.map(function (x, i) {
       var f = S.funcionarios.find(function (k) { return k.id === x.func; });
       return '<li class="' + (x.dup ? 'dup' : '') + '"><input type="checkbox" data-imp-sel="' + i + '"' + (x.sel ? ' checked' : '') + (x.dup ? ' disabled' : '') + ' aria-label="Importar ' + esc(x.desc) + '">' +
@@ -364,7 +380,7 @@ window.FIREBASE_CONFIG = {
         '<span class="num amt ' + x.tipo + '">' + (x.tipo === 'in' ? '+' : '−') + R.format(x.valor) + '</span></li>';
     }).join('') + '</ul>';
     h += '<div class="bar"><span class="sub">Entradas <b class="num amt in">' + R.format(e) + '</b> · Saídas <b class="num amt out">' + R.format(s2) + '</b></span>' +
-      '<button class="btn primary" data-a="imp-lancar"' + (sel.length && !imp.salvando ? '' : ' disabled') + '>' + (imp.salvando ? 'Lançando…' : 'Lançar ' + sel.length + ' no caixa') + '</button></div>';
+      '<button class="btn primary" data-a="imp-lancar"' + ((sel.length || imp.pend) && !imp.salvando ? '' : ' disabled') + '>' + (imp.salvando ? 'Lançando…' : (imp.pend && !sel.length ? 'Descartar todas' : 'Lançar ' + sel.length + ' no caixa')) + '</button></div>';
     return h + '</div>';
   }
 
@@ -391,21 +407,26 @@ window.FIREBASE_CONFIG = {
 
   function lancarImportacao() {
     var sel = imp.itens.filter(function (x) { return x.sel && !x.dup; });
-    if (!sel.length) return;
+    if (!sel.length && !imp.pend) return;
     imp.salvando = true; render();
-    var lotes = [];
-    for (var i = 0; i < sel.length; i += 400) lotes.push(sel.slice(i, i + 400));
+    var lotes = [], todos = imp.pend ? imp.itens : sel;
+    for (var i = 0; i < todos.length; i += 200) lotes.push(todos.slice(i, i + 200));
     Promise.all(lotes.map(function (lote) {
       var b = db.batch();
       lote.forEach(function (x) {
-        var doc = { data: x.data, tipo: x.tipo, desc: x.desc, cat: x.cat, valor: x.valor, por: primeiroNome(), origem: 'Nubank', criado: firebase.firestore.FieldValue.serverTimestamp() };
+        if (imp.pend) {
+          if (!x.sel || x.dup) { b.set(db.collection('pendentes').doc(x.chave), { descartado: true }, { merge: true }); return; }
+          b.delete(db.collection('pendentes').doc(x.chave));
+        }
+        var doc = { data: x.data, tipo: x.tipo, desc: x.desc, cat: x.cat, valor: x.valor, por: primeiroNome(), origem: imp.pend ? 'Nubank automático' : 'Nubank', criado: firebase.firestore.FieldValue.serverTimestamp() };
         if (x.func && x.cat === 'Salários') doc.func = x.func;
         b.set(db.collection('lancamentos').doc(x.chave), doc);
       });
       return b.commit();
     })).then(function () {
       impMsg = sel.length + ' movimentações lançadas no caixa.';
-      var ultimo = sel[sel.length - 1].data.slice(0, 7); imp = null; mes = ultimo; render();
+      if (sel.length) mes = sel[sel.length - 1].data.slice(0, 7);
+      imp = null; render();
     }).catch(function (e) { imp.salvando = false; falha(e); });
   }
 
@@ -513,6 +534,12 @@ window.FIREBASE_CONFIG = {
     if (a === 'entrar') return entrar();
     if (a === 'imp-cancelar') { imp = null; return render(); }
     if (a === 'imp-lancar') return lancarImportacao();
+    if (a === 'imp-pend') {
+      var ids = {}; S.lanc.forEach(function (l) { ids[l.id] = 1; });
+      var itens = S.pend.map(function (x) { var y = Object.assign({}, x); y.dup = !!ids[y.chave]; y.sel = !y.dup && !y.interno; return y; })
+        .sort(function (a2, b2) { return a2.data.localeCompare(b2.data); });
+      imp = { nome: 'Nubank (automático)', itens: itens, pend: true }; impMsg = ''; return render();
+    }
     if (a === 'sair') return auth.signOut();
     if (a === 'prev' || a === 'next') { mes = addMes(mes, a === 'prev' ? -1 : 1); confirmId = null; return render(); }
     if (a === 'ask') { confirmId = id; return render(); }
