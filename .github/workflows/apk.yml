@@ -16,14 +16,22 @@ jobs:
         with: { gradle-version: '8.7' }
       - name: Compilar
         working-directory: android
-        run: gradle assembleDebug --no-daemon 2>&1 | tee ../build.log
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee ../build.log
       - name: Publicar o APK no repositório
         if: always()
+        shell: bash
         run: |
+          set -x
+          ls -la android/app/build/outputs/apk/debug/ || true
+          git status --short | head
+          git branch -a
           if [ -f android/app/build/outputs/apk/debug/app-debug.apk ]; then cp android/app/build/outputs/apk/debug/app-debug.apk caixa.apk; rm -f build-erro.log; else tail -80 build.log > build-erro.log; fi
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add caixa.apk build-erro.log 2>/dev/null || true
-          git add -A caixa.apk build-erro.log 2>/dev/null || true
+          [ -f caixa.apk ] && git add -f caixa.apk
+          [ -f build-erro.log ] && git add -f build-erro.log
           git commit -m "APK gerado [skip ci]" || echo "nada novo"
-          git push
+          git push origin HEAD:main
