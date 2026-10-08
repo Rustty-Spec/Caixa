@@ -54,6 +54,10 @@ function dia(d) { return new Date(d).toISOString().slice(0, 10); }
   const ate = dia(new Date(hoje.getTime() + 864e5));
 
   const { apiKey } = await chamar('/auth', null, { method: 'POST', body: JSON.stringify({ clientId: PLUGGY_CLIENT_ID, clientSecret: PLUGGY_CLIENT_SECRET }) });
+  try {
+    const item = await chamar('/items/' + encodeURIComponent(PLUGGY_ITEM_ID), apiKey);
+    console.log(`::notice::Item: status=${item.status} executionStatus=${item.executionStatus} conector=${item.connector && item.connector.name} atualizado=${item.lastUpdatedAt}`);
+  } catch (e) { console.log('::warning::Item não encontrado com essas chaves: ' + e.message.slice(0, 200)); }
   const contas = (await chamar('/accounts?itemId=' + encodeURIComponent(PLUGGY_ITEM_ID), apiKey)).results || [];
   console.log('::notice::Contas: ' + (contas.map(c => c.type).join(', ') || 'nenhuma'));
   console.log('Contas encontradas:', contas.map(c => `${c.type} ${c.name || ''}`.trim()).join(', ') || 'nenhuma');
