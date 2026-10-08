@@ -87,6 +87,19 @@ table.sal td{padding:10px 4px;border-bottom:1px solid var(--line);vertical-align
 table.sal tfoot td{font-weight:600;border-bottom:0}
 .pay{display:flex;gap:6px}.pay input{width:96px}
 
+.file{position:relative;display:inline-flex;align-self:start}
+.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file input:focus-visible+.btn{outline:2px solid var(--accent);outline-offset:2px}
+ul.list.imp li{grid-template-columns:auto minmax(0,1fr) auto}
+ul.list.imp li.dup{opacity:.55}
+ul.list.imp select{margin-top:6px;width:auto;max-width:100%;padding:4px 6px;font-size:13px}
+ul.list.imp input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+@media (max-width:520px){ul.list.imp li{grid-template-columns:auto minmax(0,1fr) auto}ul.list.imp li .amt{grid-column:auto}}
+.btn[disabled]{opacity:.5;cursor:default}
+.tabs{overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab{white-space:nowrap;flex:none}
+ul.list.imp select{display:block}
+
 </style>
 </head>
 <body>
@@ -104,6 +117,152 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "30110761351",
   appId: "1:30110761351:web:419615b9edb13a6de9d322"
 };
+
+</script>
+<script>
+// Leitura de extratos do Nubank (conta em CSV ou OFX, fatura do cartão em CSV)
+(function (root) {
+  'use strict';
+
+  function hash(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function semAcento(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+
+  function csvLinhas(texto) {
+    var linhas = [], campo = '', linha = [], aspas = false;
+    var sep = (texto.split('\n')[0].split(';').length > texto.split('\n')[0].split(',').length) ? ';' : ',';
+    for (var i = 0; i < texto.length; i++) {
+      var c = texto[i];
+      if (aspas) {
+        if (c === '"' && texto[i + 1] === '"') { campo += '"'; i++; }
+        else if (c === '"') aspas = false;
+        else campo += c;
+      } else if (c === '"') aspas = true;
+      else if (c === sep) { linha.push(campo); campo = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && texto[i + 1] === '\n') i++;
+        linha.push(campo); campo = '';
+        if (linha.some(function (x) { return x.trim() !== ''; })) linhas.push(linha);
+        linha = [];
+      } else campo += c;
+    }
+    linha.push(campo);
+    if (linha.some(function (x) { return x.trim() !== ''; })) linhas.push(linha);
+    return linhas;
+  }
+
+  function numero(v) {
+    v = String(v).trim().replace(/R\$|\s/g, '');
+    if (/,\d{1,2}$/.test(v)) v = v.replace(/\./g, '').replace(',', '.');
+    var n = parseFloat(v);
+    return isFinite(n) ? n : null;
+  }
+  function data(v) {
+    v = String(v).trim();
+    var m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (m) return m[3] + '-' + m[2] + '-' + m[1];
+    m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    m = v.match(/^(\d{4})(\d{2})(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    return null;
+  }
+
+  // Encurta descrições longas do Nubank: "Transferência enviada pelo Pix - FULANO - •••.123..." vira "Pix enviado — Fulano"
+  function limpar(desc) {
+    var partes = String(desc || '').split(' - ').map(function (p) { return p.trim(); }).filter(Boolean);
+    var tipo = partes[0] || '', quem = partes[1] || '';
+    if (/[•*]{2,}|^\d/.test(quem)) quem = '';
+    var t = semAcento(tipo);
+    if (/pix/.test(t) && /recebid/.test(t)) tipo = 'Pix recebido';
+    else if (/pix/.test(t) && /enviad/.test(t)) tipo = 'Pix enviado';
+    else if (/transferencia recebida/.test(t)) tipo = 'Transferência recebida';
+    else if (/transferencia enviada/.test(t)) tipo = 'Transferência enviada';
+    else if (/compra no debito/.test(t)) tipo = 'Compra no débito';
+    else if (/pagamento de boleto/.test(t)) tipo = 'Boleto pago';
+    if (quem) quem = quem.toLowerCase().replace(/(^|\s)\S/g, function (x) { return x.toUpperCase(); });
+    var r = quem ? tipo + ' — ' + quem : tipo;
+    return r.length > 80 ? r.slice(0, 77) + '…' : r;
+  }
+
+  var REGRAS = [
+    [/aluguel|imobiliaria|condominio/, 'Aluguel'],
+    [/energia|enel|cemig|copel|celesc|coelba|light|equatorial|neoenergia|sabesp|saneamento|agua|caesb|copasa|internet|vivo|claro|tim |oi |telefon|net servicos/, 'Contas'],
+    [/das |simples nacional|darf|imposto|receita federal|prefeitura|iptu|ipva|inss|fgts|gps /, 'Impostos'],
+    [/posto|combustivel|shell|ipiranga|petrobras|br mania|uber|99app|99 pop|estacionamento|pedagio|sem parar|conectcar|veloe/, 'Transporte'],
+    [/atacad|distribuidora|fornecedor|deposito|assai|makro|atacadao/, 'Fornecedores']
+  ];
+
+  function sugerir(item, funcionarios) {
+    var d = semAcento(item.descOriginal);
+    if (item.tipo === 'out') {
+      for (var i = 0; i < (funcionarios || []).length; i++) {
+        var f = funcionarios[i], nome = semAcento(f.nome).trim();
+        if (!nome) continue;
+        var pedacos = nome.split(/\s+/);
+        var chave = pedacos.length > 1 ? pedacos[0] + ' ' + pedacos[pedacos.length - 1] : pedacos[0];
+        if (d.indexOf(nome) >= 0 || (pedacos.length > 1 && d.indexOf(pedacos[0]) >= 0 && d.indexOf(pedacos[pedacos.length - 1]) >= 0) || d.indexOf(chave) >= 0) {
+          return { cat: 'Salários', func: f.id };
+        }
+      }
+      for (var j = 0; j < REGRAS.length; j++) if (REGRAS[j][0].test(d)) return { cat: REGRAS[j][1] };
+      return { cat: 'Outras saídas' };
+    }
+    if (/estorno|reembolso|rendimento/.test(d)) return { cat: 'Outras entradas' };
+    return { cat: 'Vendas' };
+  }
+
+  function lerOFX(texto) {
+    var out = [];
+    var blocos = texto.split(/<STMTTRN>/i).slice(1);
+    blocos.forEach(function (b) {
+      function tag(n) { var m = b.match(new RegExp('<' + n + '>([^<\\r\\n]*)', 'i')); return m ? m[1].trim() : ''; }
+      var v = numero(tag('TRNAMT')), d = data(tag('DTPOSTED'));
+      if (v == null || !d || v === 0) return;
+      var desc = tag('MEMO') || tag('NAME');
+      out.push({ data: d, valor: Math.abs(v), tipo: v < 0 ? 'out' : 'in', descOriginal: desc, idBanco: tag('FITID') });
+    });
+    return out;
+  }
+
+  function lerCSV(texto) {
+    var L = csvLinhas(texto);
+    if (L.length < 2) return [];
+    var cab = L[0].map(function (h) { return semAcento(h).trim(); });
+    function col(nomes) { for (var i = 0; i < cab.length; i++) if (nomes.indexOf(cab[i]) >= 0) return i; return -1; }
+    var iData = col(['data', 'date']), iValor = col(['valor', 'amount']), iDesc = col(['descricao', 'title', 'descrição']), iId = col(['identificador', 'id']);
+    if (iData < 0 || iValor < 0) throw new Error('formato');
+    var cartao = cab.indexOf('amount') >= 0 && cab.indexOf('title') >= 0; // fatura do cartão: valor positivo é gasto
+    var out = [];
+    L.slice(1).forEach(function (r) {
+      var v = numero(r[iValor]), d = data(r[iData]);
+      if (v == null || !d || v === 0) return;
+      var neg = cartao ? v > 0 : v < 0;
+      out.push({ data: d, valor: Math.round(Math.abs(v) * 100) / 100, tipo: neg ? 'out' : 'in', descOriginal: iDesc >= 0 ? r[iDesc] : '', idBanco: iId >= 0 ? r[iId] : '' });
+    });
+    return out;
+  }
+
+  function ler(texto, nomeArquivo, funcionarios) {
+    texto = String(texto || '').replace(/^﻿/, '');
+    var itens = /<OFX>|<STMTTRN>/i.test(texto) || /\.ofx$/i.test(nomeArquivo || '') ? lerOFX(texto) : lerCSV(texto);
+    var vistos = {};
+    return itens.map(function (it) {
+      var base = it.idBanco ? 'id:' + it.idBanco : it.data + '|' + it.valor + '|' + it.tipo + '|' + it.descOriginal;
+      var n = (vistos[base] = (vistos[base] || 0) + 1);
+      it.chave = 'nu_' + hash(base + (n > 1 ? '#' + n : ''));
+      it.desc = limpar(it.descOriginal) || (it.tipo === 'in' ? 'Entrada' : 'Saída');
+      var s = sugerir(it, funcionarios);
+      it.cat = s.cat; if (s.func) it.func = s.func;
+      // movimentos entre contas do próprio dono (fatura, guardar dinheiro) começam desmarcados
+      it.interno = /pagamento recebido|pagamento de fatura|pagamento da fatura|aplicacao rdb|resgate rdb|dinheiro guardado|dinheiro resgatado|caixinha/.test(semAcento(it.descOriginal));
+      return it;
+    }).sort(function (a, b) { return a.data.localeCompare(b.data); });
+  }
+
+  root.Extrato = { ler: ler };
+  if (typeof module !== 'undefined') module.exports = root.Extrato;
+})(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
 <script>
@@ -128,7 +287,7 @@ window.FIREBASE_CONFIG = {
 
   var S = { lanc: [], funcionarios: [] };
   var user = null, erro = '', carregou = { l: false, f: false };
-  var mes = ym(new Date()), aba = 'lanc', tipo = 'out', confirmId = null, unsub = [];
+  var mes = ym(new Date()), aba = 'lanc', tipo = 'out', confirmId = null, unsub = [], imp = null, impMsg = '';
   try { aba = localStorage.getItem('caixa-aba') || aba; } catch (e) {}
 
   function ym(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
@@ -185,6 +344,71 @@ window.FIREBASE_CONFIG = {
     });
   }
 
+  function painelImportar() {
+    var h = '<div class="panel"><div class="bar"><h2>Importar extrato do Nubank</h2>' + (imp ? '<button class="btn small" data-a="imp-cancelar">Cancelar</button>' : '') + '</div>';
+    if (!imp) {
+      h += '<p class="sub" style="margin:0">Peça o extrato da conta no app do Nubank em <b>CSV</b> ou <b>OFX</b> e escolha o arquivo aqui. A fatura do cartão em CSV também funciona. Nada é lançado antes de você conferir.</p>' +
+        '<label class="file"><input type="file" id="arq" accept=".csv,.ofx,.txt,text/csv"><span class="btn">Escolher arquivo do extrato</span></label>';
+      if (impMsg) h += '<div class="note">' + esc(impMsg) + '</div>';
+      return h + '</div>';
+    }
+    var sel = imp.itens.filter(function (x) { return x.sel; }), e = 0, s2 = 0;
+    sel.forEach(function (x) { if (x.tipo === 'in') e += x.valor; else s2 += x.valor; });
+    var dups = imp.itens.filter(function (x) { return x.dup; }).length;
+    h += '<p class="sub" style="margin:0">' + esc(imp.nome) + ' · ' + imp.itens.length + ' movimentações' + (dups ? ' · ' + dups + ' já estavam no caixa' : '') + '. Confira as categorias e desmarque o que não é da empresa.</p>';
+    h += '<ul class="list imp">' + imp.itens.map(function (x, i) {
+      var f = S.funcionarios.find(function (k) { return k.id === x.func; });
+      return '<li class="' + (x.dup ? 'dup' : '') + '"><input type="checkbox" data-imp-sel="' + i + '"' + (x.sel ? ' checked' : '') + (x.dup ? ' disabled' : '') + ' aria-label="Importar ' + esc(x.desc) + '">' +
+        '<div class="desc"><b>' + esc(x.desc) + '</b><span>' + dataBR(x.data) + (x.dup ? ' · já lançado' : '') + (f ? ' · ' + esc(f.nome) : '') + '</span>' +
+        (x.dup ? '' : '<select data-imp-cat="' + i + '" aria-label="Categoria">' + CATS[x.tipo].map(function (c) { return '<option' + (c === x.cat ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>') + '</div>' +
+        '<span class="num amt ' + x.tipo + '">' + (x.tipo === 'in' ? '+' : '−') + R.format(x.valor) + '</span></li>';
+    }).join('') + '</ul>';
+    h += '<div class="bar"><span class="sub">Entradas <b class="num amt in">' + R.format(e) + '</b> · Saídas <b class="num amt out">' + R.format(s2) + '</b></span>' +
+      '<button class="btn primary" data-a="imp-lancar"' + (sel.length && !imp.salvando ? '' : ' disabled') + '>' + (imp.salvando ? 'Lançando…' : 'Lançar ' + sel.length + ' no caixa') + '</button></div>';
+    return h + '</div>';
+  }
+
+  function abrirArquivo(file) {
+    if (!file) return;
+    function processar(texto) {
+      try {
+        var ids = {}; S.lanc.forEach(function (l) { ids[l.id] = 1; });
+        var itens = window.Extrato.ler(texto, file.name, S.funcionarios);
+        if (!itens.length) { impMsg = 'Não encontrei movimentações nesse arquivo. Confira se é o extrato em CSV ou OFX.'; return render(); }
+        itens.forEach(function (x) { x.dup = !!ids[x.chave]; x.sel = !x.dup && !x.interno; });
+        imp = { nome: file.name, itens: itens }; impMsg = ''; render();
+      } catch (e) { impMsg = 'Não consegui ler esse arquivo. Use o extrato do Nubank em CSV ou OFX.'; render(); }
+    }
+    var r = new FileReader();
+    r.onload = function () {
+      var t = String(r.result || '');
+      if (t.indexOf('\uFFFD') >= 0) { var r2 = new FileReader(); r2.onload = function () { processar(String(r2.result || '')); }; r2.readAsText(file, 'ISO-8859-1'); }
+      else processar(t);
+    };
+    r.onerror = function () { impMsg = 'Não foi possível abrir o arquivo.'; render(); };
+    r.readAsText(file, 'UTF-8');
+  }
+
+  function lancarImportacao() {
+    var sel = imp.itens.filter(function (x) { return x.sel && !x.dup; });
+    if (!sel.length) return;
+    imp.salvando = true; render();
+    var lotes = [];
+    for (var i = 0; i < sel.length; i += 400) lotes.push(sel.slice(i, i + 400));
+    Promise.all(lotes.map(function (lote) {
+      var b = db.batch();
+      lote.forEach(function (x) {
+        var doc = { data: x.data, tipo: x.tipo, desc: x.desc, cat: x.cat, valor: x.valor, por: primeiroNome(), origem: 'Nubank', criado: firebase.firestore.FieldValue.serverTimestamp() };
+        if (x.func && x.cat === 'Salários') doc.func = x.func;
+        b.set(db.collection('lancamentos').doc(x.chave), doc);
+      });
+      return b.commit();
+    })).then(function () {
+      impMsg = sel.length + ' movimentações lançadas no caixa.';
+      var ultimo = sel[sel.length - 1].data.slice(0, 7); imp = null; mes = ultimo; render();
+    }).catch(function (e) { imp.salvando = false; falha(e); });
+  }
+
   function render() {
     if (!user) {
       app.innerHTML = '<div class="login"><h1>Caixa da Empresa</h1><p class="sub">Entre com a sua conta Google para ver e lançar as entradas e saídas.</p>' +
@@ -207,6 +431,7 @@ window.FIREBASE_CONFIG = {
     }).join('') + '</div>';
 
     if (aba === 'lanc') {
+      h += painelImportar();
       h += '<div class="panel"><h2>Novo lançamento</h2><form class="grid" id="fl">' +
         '<label>Tipo<div class="seg"><button type="button" class="in" data-tipo="in" aria-pressed="' + (tipo === 'in') + '">Entrada</button><button type="button" class="out" data-tipo="out" aria-pressed="' + (tipo === 'out') + '">Saída</button></div></label>' +
         '<label>Descrição<input id="l-desc" required placeholder="Ex.: compra de material"></label>' +
@@ -273,7 +498,7 @@ window.FIREBASE_CONFIG = {
       h += '</div>';
     }
     // preserva o que está sendo digitado quando chega atualização de outro celular
-    var keep = {}; app.querySelectorAll('input[id],select[id]').forEach(function (el) { keep[el.id] = el.value; });
+    var keep = {}; app.querySelectorAll('input[id]:not([type=file]),select[id]').forEach(function (el) { keep[el.id] = el.value; });
     var foco = document.activeElement && document.activeElement.id;
     app.innerHTML = h;
     Object.keys(keep).forEach(function (i) { if (i !== 'l-cat' || CATS[tipo].indexOf(keep[i]) >= 0) set(i, keep[i]); });
@@ -286,6 +511,8 @@ window.FIREBASE_CONFIG = {
     if (t.dataset.tipo) { tipo = t.dataset.tipo; return render(); }
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'entrar') return entrar();
+    if (a === 'imp-cancelar') { imp = null; return render(); }
+    if (a === 'imp-lancar') return lancarImportacao();
     if (a === 'sair') return auth.signOut();
     if (a === 'prev' || a === 'next') { mes = addMes(mes, a === 'prev' ? -1 : 1); confirmId = null; return render(); }
     if (a === 'ask') { confirmId = id; return render(); }
@@ -303,6 +530,14 @@ window.FIREBASE_CONFIG = {
         cat: 'Salários', valor: v, func: f.id, por: primeiroNome(), criado: firebase.firestore.FieldValue.serverTimestamp()
       }).catch(falha);
     }
+  });
+
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.id === 'arq') return abrirArquivo(t.files && t.files[0]);
+    if (!imp) return;
+    if (t.dataset.impSel != null) { imp.itens[+t.dataset.impSel].sel = t.checked; return render(); }
+    if (t.dataset.impCat != null) { var x = imp.itens[+t.dataset.impCat]; x.cat = t.value; if (t.value !== 'Salários') delete x.func; return render(); }
   });
 
   document.addEventListener('submit', function (e) {
