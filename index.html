@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Caixa da Empresa</title>
+<meta name="theme-color" content="#20566b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600&family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+
+/* Layout: um livro-caixa de uma coluna — saldo do mês no topo, abas para lançamentos e equipe */
+:root{
+  --bg:#f3f5f4;--surface:#ffffff;--ink:#1d2a2e;--muted:#5d6b6f;--line:#dbe2e0;
+  --accent:#20566b;--accent-soft:#e1edf1;--in:#1f7a52;--in-soft:#e2f2e9;--out:#b5462f;--out-soft:#f8e6e1;
+  --display:"Fraunces",Georgia,serif;--body:"Figtree",system-ui,sans-serif;--num:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121a1c;--surface:#1a2427;--ink:#e6eeec;--muted:#93a3a6;--line:#2c3a3d;
+  --accent:#7cbcd3;--accent-soft:#1f3640;--in:#5fcf98;--in-soft:#173328;--out:#ef8a72;--out-soft:#3a201a;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121a1c;--surface:#1a2427;--ink:#e6eeec;--muted:#93a3a6;--line:#2c3a3d;
+  --accent:#7cbcd3;--accent-soft:#1f3640;--in:#5fcf98;--in-soft:#173328;--out:#ef8a72;--out-soft:#3a201a;color-scheme:dark}
+html{-webkit-text-size-adjust:100%}*{box-sizing:border-box}body{margin:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:var(--bg);color:var(--ink);font:15px/1.5 var(--body)}
+#app{max-width:760px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:18px}
+h1{font:600 26px/1.15 var(--display);margin:0;text-wrap:balance}
+h2{font:600 17px/1.3 var(--body);margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+.sub{color:var(--muted);font-size:13px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums}
+.month{display:flex;align-items:center;gap:6px}
+button,input,select{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:600}
+.btn.small{padding:4px 9px;font-size:13px}
+.btn.danger{color:var(--out)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tot{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.tot .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.tot .val{font-family:var(--num);font-size:19px;font-weight:600;overflow-wrap:anywhere}
+.tot.in .val{color:var(--in)}.tot.out .val{color:var(--out)}
+.tot.bal{background:var(--accent-soft);border-color:transparent}
+@media (max-width:520px){.totals{grid-template-columns:1fr 1fr}.tot.bal{grid-column:1/-1}}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tab{border:0;background:none;padding:9px 12px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab[aria-selected="true"]{color:var(--ink);border-color:var(--accent);font-weight:600}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px}
+form.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px 9px;min-width:0;width:100%;box-sizing:border-box}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--bg);padding:8px;cursor:pointer}
+.seg button[aria-pressed="true"].in{background:var(--in-soft);color:var(--in);font-weight:600}
+.seg button[aria-pressed="true"].out{background:var(--out-soft);color:var(--out);font-weight:600}
+ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+ul.list li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+ul.list li:first-child{border-top:0}
+.pill{font-size:11px;font-weight:600;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.04em}
+.pill.in{background:var(--in-soft);color:var(--in)}.pill.out{background:var(--out-soft);color:var(--out)}
+.desc{min-width:0}.desc b{display:block;font-weight:600;overflow-wrap:anywhere}.desc span{color:var(--muted);font-size:13px}
+.amt.in{color:var(--in)}.amt.out{color:var(--out)}
+.ex{font-size:11px;color:var(--muted);border:1px dashed var(--line);border-radius:4px;padding:0 4px;margin-left:4px}
+.empty{color:var(--muted);text-align:center;padding:18px 0}
+.note{font-size:13px;color:var(--muted);background:var(--accent-soft);border-radius:8px;padding:8px 12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.cats{display:flex;flex-direction:column;gap:8px}
+.cat{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:14px}
+.track{grid-column:1/-1;height:6px;background:var(--bg);border-radius:4px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--out);border-radius:4px}
+.status{font-size:12px;color:var(--muted);min-height:1em}
+@media (max-width:520px){ul.list li{grid-template-columns:minmax(0,1fr) auto}ul.list li .pill{grid-column:1/-1;justify-self:start}ul.list li .btn{grid-column:2}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.login{min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:360px;margin:0 auto}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.by{font-size:12px;color:var(--muted)}
+
+.tablewrap{overflow-x:auto;margin:0 -4px}
+table.sal{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+table.sal th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:6px 4px;border-bottom:1px solid var(--line)}
+table.sal td{padding:10px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.sal tfoot td{font-weight:600;border-bottom:0}
+.pay{display:flex;gap:6px}.pay input{width:96px}
+
+</style>
+</head>
+<body>
+<div id="app"><p class="sub">Carregando o caixa…</p></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// Configuração do projeto Firebase "caixa-familia"
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCBQF3XEYMC9tey3K9OZ6H74UOYh6b1Sq0",
+  authDomain: "caixa-familia-d0ce3.firebaseapp.com",
+  projectId: "caixa-familia-d0ce3",
+  storageBucket: "caixa-familia-d0ce3.firebasestorage.app",
+  messagingSenderId: "30110761351",
+  appId: "1:30110761351:web:419615b9edb13a6de9d322"
+};
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var CATS = {
+    in: ['Vendas', 'Serviços', 'Outras entradas'],
+    out: ['Salários', 'Aluguel', 'Contas', 'Fornecedores', 'Impostos', 'Transporte', 'Outras saídas']
+  };
+  var MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  var R = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  var app = document.getElementById('app');
+  if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) {
+    app.innerHTML = '<div class="login"><h1>Caixa da Empresa</h1><p class="sub">Falta a configuração do Firebase (arquivo config.js).</p></div>';
+    return;
+  }
+  firebase.initializeApp(window.FIREBASE_CONFIG);
+  var auth = firebase.auth();
+  var db = firebase.firestore();
+  db.enablePersistence({ synchronizeTabs: true }).catch(function () {});
+
+  var S = { lanc: [], funcionarios: [] };
+  var user = null, erro = '', carregou = { l: false, f: false };
+  var mes = ym(new Date()), aba = 'lanc', tipo = 'out', confirmId = null, unsub = [];
+  try { aba = localStorage.getItem('caixa-aba') || aba; } catch (e) {}
+
+  function ym(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  function hoje() { var d = new Date(); return ym(d) + '-' + String(d.getDate()).padStart(2, '0'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function nomeMes(k) { var p = k.split('-'); return MESES[+p[1] - 1] + ' de ' + p[0]; }
+  function addMes(k, n) { var p = k.split('-'); return ym(new Date(+p[0], +p[1] - 1 + n, 1)); }
+  function dataBR(s) { var p = s.split('-'); return p[2] + '/' + p[1]; }
+  function parseValor(v) {
+    v = String(v).trim().replace(/\s|R\$/g, '');
+    if (v.indexOf(',') >= 0) v = v.replace(/\./g, '').replace(',', '.');
+    var n = parseFloat(v);
+    return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+  }
+  function primeiroNome() { return (user && (user.displayName || user.email) || '').split(/[ @]/)[0]; }
+  function pagoNoMes(fid) {
+    var t = 0;
+    S.lanc.forEach(function (l) { if (l.func === fid && l.tipo === 'out' && l.cat === 'Salários' && (l.data || '').slice(0, 7) === mes) t += l.valor; });
+    return Math.round(t * 100) / 100;
+  }
+  function val(i) { var el = document.getElementById(i); return el ? el.value : ''; }
+  function set(i, v) { var el = document.getElementById(i); if (el && v != null) el.value = v; }
+  function falha(e) {
+    erro = e && e.code === 'permission-denied'
+      ? 'Este e-mail não tem permissão para usar o caixa. Peça para liberarem o seu acesso.'
+      : 'Não foi possível salvar. Verifique a internet e tente de novo.';
+    render();
+  }
+
+  auth.onAuthStateChanged(function (u) {
+    user = u; erro = '';
+    unsub.forEach(function (f) { f(); }); unsub = [];
+    S = { lanc: [], funcionarios: [] }; carregou = { l: false, f: false };
+    if (u) {
+      unsub.push(db.collection('lancamentos').onSnapshot(function (q) {
+        S.lanc = q.docs.map(function (d) { var x = d.data(); x.id = d.id; return x; });
+        carregou.l = true; render();
+      }, falha));
+      unsub.push(db.collection('funcionarios').orderBy('nome').onSnapshot(function (q) {
+        S.funcionarios = q.docs.map(function (d) { var x = d.data(); x.id = d.id; return x; });
+        carregou.f = true; render();
+      }, falha));
+    }
+    render();
+  });
+
+  function entrar() {
+    var p = new firebase.auth.GoogleAuthProvider();
+    p.setCustomParameters({ prompt: 'select_account' });
+    auth.signInWithPopup(p).catch(function (e) {
+      if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) return auth.signInWithRedirect(p);
+      if (e && e.code === 'auth/popup-closed-by-user') return;
+      erro = 'Não foi possível entrar (' + (e && e.code || 'erro') + ').'; render();
+    });
+  }
+
+  function render() {
+    if (!user) {
+      app.innerHTML = '<div class="login"><h1>Caixa da Empresa</h1><p class="sub">Entre com a sua conta Google para ver e lançar as entradas e saídas.</p>' +
+        '<button class="btn primary" data-a="entrar">Entrar com Google</button>' + (erro ? '<p class="note">' + esc(erro) + '</p>' : '') + '</div>';
+      return;
+    }
+    var L = S.lanc.filter(function (l) { return (l.data || '').slice(0, 7) === mes; })
+      .sort(function (a, b) { return b.data.localeCompare(a.data); });
+    var ent = 0, sai = 0;
+    L.forEach(function (l) { if (l.tipo === 'in') ent += l.valor; else sai += l.valor; });
+    var saldo = ent - sai;
+    var h = '<div class="top"><div><h1>Caixa da Empresa</h1><div class="who">' + esc(user.email) + ' · <button class="btn small" data-a="sair">Sair</button></div></div>' +
+      '<div class="month"><button class="btn small" data-a="prev" aria-label="Mês anterior">‹</button><b style="min-width:150px;text-align:center">' + nomeMes(mes) + '</b><button class="btn small" data-a="next" aria-label="Próximo mês">›</button></div></div>';
+    h += '<div class="totals"><div class="tot in"><div class="lbl">Entradas</div><div class="val">' + R.format(ent) + '</div></div>' +
+      '<div class="tot out"><div class="lbl">Saídas</div><div class="val">' + R.format(sai) + '</div></div>' +
+      '<div class="tot bal"><div class="lbl">Saldo do mês</div><div class="val" style="color:' + (saldo < 0 ? 'var(--out)' : 'var(--ink)') + '">' + R.format(saldo) + '</div></div></div>';
+    if (erro) h += '<div class="note">' + esc(erro) + '</div>';
+    h += '<div class="tabs" role="tablist">' + [['lanc', 'Lançamentos'], ['sal', 'Salários'], ['func', 'Funcionários'], ['cat', 'Categorias']].map(function (t) {
+      return '<button class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + (aba === t[0]) + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+
+    if (aba === 'lanc') {
+      h += '<div class="panel"><h2>Novo lançamento</h2><form class="grid" id="fl">' +
+        '<label>Tipo<div class="seg"><button type="button" class="in" data-tipo="in" aria-pressed="' + (tipo === 'in') + '">Entrada</button><button type="button" class="out" data-tipo="out" aria-pressed="' + (tipo === 'out') + '">Saída</button></div></label>' +
+        '<label>Descrição<input id="l-desc" required placeholder="Ex.: compra de material"></label>' +
+        '<label>Valor (R$)<input id="l-valor" inputmode="decimal" required placeholder="0,00"></label>' +
+        '<label>Data<input id="l-data" type="date" required value="' + (mes === ym(new Date()) ? hoje() : mes + '-01') + '"></label>' +
+        '<label>Categoria<select id="l-cat">' + CATS[tipo].map(function (c) { return '<option>' + c + '</option>'; }).join('') + '</select></label>' +
+        '<label>Funcionário (opcional)<select id="l-func"><option value="">—</option>' + S.funcionarios.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + '</option>'; }).join('') + '</select></label>' +
+        '<button class="btn primary" type="submit">Adicionar</button></form><div class="status" id="msg"></div></div>';
+      h += '<div class="panel"><h2>Lançamentos de ' + nomeMes(mes) + '</h2>';
+      if (!carregou.l) h += '<div class="empty">Carregando…</div>';
+      else if (!L.length) h += '<div class="empty">Nenhum lançamento neste mês. Use o formulário acima para adicionar o primeiro.</div>';
+      else h += '<ul class="list">' + L.map(function (l) {
+        var f = S.funcionarios.find(function (x) { return x.id === l.func; });
+        return '<li><span class="pill ' + l.tipo + '">' + (l.tipo === 'in' ? 'Entrada' : 'Saída') + '</span>' +
+          '<div class="desc"><b>' + esc(l.desc) + '</b><span>' + dataBR(l.data) + ' · ' + esc(l.cat) + (f ? ' · ' + esc(f.nome) : '') + (l.por ? ' · lançado por ' + esc(l.por) : '') + '</span></div>' +
+          '<span class="num amt ' + l.tipo + '">' + (l.tipo === 'in' ? '+' : '−') + R.format(l.valor) + '</span>' +
+          (confirmId === l.id ? '<span><button class="btn small danger" data-a="del" data-id="' + l.id + '">Excluir</button> <button class="btn small" data-a="cancel">Não</button></span>'
+            : '<button class="btn small" data-a="ask" data-id="' + l.id + '">Excluir</button>') + '</li>';
+      }).join('') + '</ul>';
+      h += '</div>';
+    } else if (aba === 'sal') {
+      var tS = 0, tP = 0, tF = 0;
+      h += '<div class="panel"><div class="bar"><h2>Salários de ' + nomeMes(mes) + '</h2><span class="sub">Pagamentos parciais (vales) também contam</span></div>';
+      if (!carregou.f || !carregou.l) h += '<div class="empty">Carregando…</div>';
+      else if (!S.funcionarios.length) h += '<div class="empty">Cadastre os funcionários na aba Funcionários para controlar os salários aqui.</div>';
+      else {
+        h += '<div class="tablewrap"><table class="sal"><thead><tr><th>Funcionário</th><th>Salário</th><th>Valor pago</th><th>Valor faltante</th><th>Pagar agora</th></tr></thead><tbody>' + S.funcionarios.map(function (f) {
+          var sal = f.salario || 0, pg = pagoNoMes(f.id), ft = Math.max(Math.round((sal - pg) * 100) / 100, 0);
+          tS += sal; tP += pg; tF += ft;
+          return '<tr><td><b>' + esc(f.nome) + '</b><div class="by">' + esc(f.cargo || '') + '</div></td><td class="num">' + R.format(sal) + '</td><td class="num amt in">' + R.format(pg) + '</td>' +
+            '<td class="num ' + (ft > 0 ? 'amt out' : '') + '">' + (ft > 0 ? R.format(ft) : '<span class="pill in">Quitado</span>') + '</td>' +
+            '<td>' + (ft > 0 ? '<div class="pay"><input id="p-' + f.id + '" inputmode="decimal" placeholder="' + R.format(ft).replace('R$', '').trim() + '" aria-label="Valor a pagar para ' + esc(f.nome) + '"><button class="btn small primary" data-a="pagar" data-id="' + f.id + '">Pagar</button></div>' : '') + '</td></tr>';
+        }).join('') + '</tbody><tfoot><tr><td>Total</td><td class="num">' + R.format(tS) + '</td><td class="num amt in">' + R.format(tP) + '</td><td class="num amt out">' + R.format(tF) + '</td><td></td></tr></tfoot></table></div>';
+        h += '<div class="sub">Deixe o campo vazio para pagar o valor faltante inteiro, ou digite um valor menor para lançar um vale.</div>';
+      }
+      h += '</div>';
+    } else if (aba === 'func') {
+      h += '<div class="panel"><h2>Adicionar funcionário</h2><form class="grid" id="ff">' +
+        '<label>Nome<input id="f-nome" required></label><label>Cargo<input id="f-cargo"></label>' +
+        '<label>Salário mensal (R$)<input id="f-sal" inputmode="decimal" placeholder="0,00"></label>' +
+        '<button class="btn primary" type="submit">Adicionar</button></form></div>';
+      var totSal = 0; S.funcionarios.forEach(function (f) { totSal += f.salario || 0; });
+      h += '<div class="panel"><div class="bar"><h2>Equipe (' + S.funcionarios.length + ')</h2><span class="sub">Folha mensal: <b class="num">' + R.format(totSal) + '</b></span></div>';
+      if (!carregou.f) h += '<div class="empty">Carregando…</div>';
+      else if (!S.funcionarios.length) h += '<div class="empty">Nenhum funcionário ainda. Adicione o primeiro acima.</div>';
+      else h += '<ul class="list">' + S.funcionarios.map(function (f) {
+        var pg = pagoNoMes(f.id), quit = pg >= (f.salario || 0);
+        return '<li><span class="pill ' + (quit ? 'in' : 'out') + '">' + (quit ? 'Pago' : pg > 0 ? 'Parcial' : 'A pagar') + '</span>' +
+          '<div class="desc"><b>' + esc(f.nome) + '</b><span>' + esc(f.cargo || 'Sem cargo') + ' · salário ' + R.format(f.salario || 0) + '</span></div>' +
+          '<span></span>' +
+          (confirmId === f.id ? '<span><button class="btn small danger" data-a="delf" data-id="' + f.id + '">Remover</button> <button class="btn small" data-a="cancel">Não</button></span>'
+            : '<button class="btn small" data-a="ask" data-id="' + f.id + '">Remover</button>') + '</li>';
+      }).join('') + '</ul>';
+      h += '</div>';
+    } else {
+      var por = {};
+      L.forEach(function (l) { if (l.tipo === 'out') por[l.cat] = (por[l.cat] || 0) + l.valor; });
+      var ks = Object.keys(por).sort(function (a, b) { return por[b] - por[a]; }), mx = ks.length ? por[ks[0]] : 1;
+      h += '<div class="panel"><h2>Para onde foi o dinheiro em ' + nomeMes(mes) + '</h2>';
+      if (!ks.length) h += '<div class="empty">Sem saídas neste mês.</div>';
+      else h += '<div class="cats">' + ks.map(function (k) {
+        return '<div class="cat"><span>' + esc(k) + ' <span class="sub">' + Math.round(por[k] / sai * 100) + '%</span></span><span class="num">' + R.format(por[k]) + '</span><div class="track"><i style="width:' + (por[k] / mx * 100) + '%"></i></div></div>';
+      }).join('') + '</div>';
+      h += '</div>';
+    }
+    // preserva o que está sendo digitado quando chega atualização de outro celular
+    var keep = {}; app.querySelectorAll('input[id],select[id]').forEach(function (el) { keep[el.id] = el.value; });
+    var foco = document.activeElement && document.activeElement.id;
+    app.innerHTML = h;
+    Object.keys(keep).forEach(function (i) { if (i !== 'l-cat' || CATS[tipo].indexOf(keep[i]) >= 0) set(i, keep[i]); });
+    if (foco) { var el = document.getElementById(foco); if (el) el.focus(); }
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-a],[data-tab],[data-tipo]'); if (!t) return;
+    if (t.dataset.tab) { aba = t.dataset.tab; confirmId = null; try { localStorage.setItem('caixa-aba', aba); } catch (_) {} return render(); }
+    if (t.dataset.tipo) { tipo = t.dataset.tipo; return render(); }
+    var a = t.dataset.a, id = t.dataset.id;
+    if (a === 'entrar') return entrar();
+    if (a === 'sair') return auth.signOut();
+    if (a === 'prev' || a === 'next') { mes = addMes(mes, a === 'prev' ? -1 : 1); confirmId = null; return render(); }
+    if (a === 'ask') { confirmId = id; return render(); }
+    if (a === 'cancel') { confirmId = null; return render(); }
+    if (a === 'del') { confirmId = null; db.collection('lancamentos').doc(id).delete().catch(falha); return; }
+    if (a === 'delf') { confirmId = null; db.collection('funcionarios').doc(id).delete().catch(falha); return; }
+    if (a === 'pagar') {
+      var f = S.funcionarios.find(function (x) { return x.id === id; }); if (!f) return;
+      var falta = Math.max(Math.round(((f.salario || 0) - pagoNoMes(f.id)) * 100) / 100, 0);
+      var digitado = val('p-' + id).trim(), v = digitado ? parseValor(digitado) : falta;
+      if (!v) { erro = 'Digite um valor válido para pagar ' + f.nome + ', por exemplo 500,00.'; return render(); }
+      erro = ''; set('p-' + id, '');
+      db.collection('lancamentos').add({
+        data: mes === ym(new Date()) ? hoje() : mes + '-05', tipo: 'out', desc: (v < falta ? 'Vale de salário — ' : 'Salário — ') + f.nome,
+        cat: 'Salários', valor: v, func: f.id, por: primeiroNome(), criado: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(falha);
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (e.target.id === 'fl') {
+      var msg = document.getElementById('msg'), v = parseValor(val('l-valor')), desc = val('l-desc').trim();
+      if (!v) { msg.textContent = 'Digite um valor maior que zero, por exemplo 150,00.'; return; }
+      if (!desc) { msg.textContent = 'Escreva uma descrição.'; return; }
+      var d = val('l-data') || hoje();
+      var doc = { data: d, tipo: tipo, desc: desc, cat: val('l-cat'), valor: v, por: primeiroNome(), criado: firebase.firestore.FieldValue.serverTimestamp() };
+      if (val('l-func')) doc.func = val('l-func');
+      db.collection('lancamentos').add(doc).catch(falha);
+      set('l-desc', ''); set('l-valor', '');
+      if (d.slice(0, 7) !== mes) { mes = d.slice(0, 7); render(); }
+    } else if (e.target.id === 'ff') {
+      var nome = val('f-nome').trim(); if (!nome) return;
+      db.collection('funcionarios').add({ nome: nome, cargo: val('f-cargo').trim(), salario: parseValor(val('f-sal')) || 0 }).catch(falha);
+      set('f-nome', ''); set('f-cargo', ''); set('f-sal', '');
+    }
+  });
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  render();
+})();
+
+</script>
+</body>
+</html>
